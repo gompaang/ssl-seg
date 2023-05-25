@@ -34,7 +34,8 @@ def train(model, criterion, optimizer, num_epochs, lr, task):
             loss.backward()
             optimizer.step()
             running_loss += loss.item()
-        print(f'[{epoch + 1}, {i + 1:5d}] loss: {running_loss / len(trainloader):.3f}')
+        print(f'[{epoch + 1}, {i + 1:5d}] loss: {running_loss/len(trainloader):.3f}')
+        #wandb.log({'Epoch': epoch, 'loss': running_loss/len(trainloader)})
 
         avg_test_loss = 0.0
         with torch.no_grad():
@@ -51,7 +52,8 @@ def train(model, criterion, optimizer, num_epochs, lr, task):
         if best_loss > (avg_test_loss / len(testloader)):
             best_loss = (avg_test_loss / len(testloader))
 
-        print(f'Average Loss: {avg_test_loss / len(testloader):.3f}')
+        print(f'Average Loss: {avg_test_loss/len(testloader):.3f}')
+        wandb.log({'Epoch': epoch, 'loss': avg_test_loss/len(testloader)})
 
     total_time = time.time() - start_time
     print('Finish Training')
@@ -78,6 +80,7 @@ if __name__ == '__main__':
     lr = config.lr
     task = config.task
     path = config.path
+    wandb.init(project='ssl-cam', entity='heystranger')  # wandb
 
     # 1. data load
     transform_train = transforms.Compose([
