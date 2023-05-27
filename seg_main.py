@@ -8,6 +8,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
+from torchvision.models import resnet50
 from torchvision.models.segmentation import fcn_resnet50
 from torchvision.datasets import VOCSegmentation
 
@@ -27,7 +28,7 @@ def train(model, criterion, optimizer, num_epochs, lr):
     start_time = time.time()
     best_loss = 100
 
-    for epoch in range(10):  # 예시로 10 에폭으로 설정
+    for epoch in range(num_epochs):  # 예시로 10 에폭으로 설정
         running_loss = 0.0
         model.train()
 
@@ -79,6 +80,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=int, default=0.01)
     parser.add_argument('--ptmodel', type=str, default='basic')
     parser.add_argument('--path', type=str, default='./fcn-s.pth.tar')
+    parser.add_argument('--model_path', type=str, default='./r50-rc.pth.tar')
 
     config = parser.parse_args()
 
@@ -89,6 +91,7 @@ if __name__ == '__main__':
     lr = config.lr
     ptmodel = config.ptmodel
     path = config.path
+    model_path = config.model_path
     wandb.init(project='ssl-cam', entity='heystranger')  # wandb
 
     # 1. data load
@@ -123,11 +126,32 @@ if __name__ == '__main__':
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     if ptmodel == 'rotation':
-        print('rotation')
+        # 2. model
+        resnet_model = resnet50()
+        resnet_model.load_state_dict(torch.load(model_path))
+
+        fcn_model = fcn_resnet50(pretrained=False, num_classes=num_classes)
+        state_dict_fcn = fcn_model.backbone.state_dict()
+        state_dict_resnet = resnet_model['state_dict']
+
+        backbone_state_dict = {
+            k: v for k, v in state_dict_resnet.items() if k in state_dict_fcn
+        }
+        state_dict_fcn.update(backbone_state_dict)
+        fcn_model.backbone.load_state_dict(state_dict_fcn)
+
+        # fcn_model.backbone.load_state_dict(resnet50)
+        criterion = nn.CrossEntropyLoss()
+        # criterion = nn.BCEWithLogitsLoss()
+        optimizer = optim.Adam(fcn_model.parameters(), lr=lr)
+
+        # 3. train
+        train(fcn_model, criterion, optimizer, num_epochs, lr)
+        torch.save(fcn_model.state_dict(), path)
 
     elif ptmodel == 'basic':
         # 2. model
-        fcn_model = fcn_resnet50(pretrained=False, num_classes=num_classes)
+        fcn_model = fcn_resnet50(pretrained=True, num_classes=num_classes)
         fcn_model.to(device)
         criterion = nn.CrossEntropyLoss()
         # criterion = nn.BCEWithLogitsLoss()
