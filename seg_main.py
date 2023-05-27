@@ -1,4 +1,7 @@
 import random
+import time
+import wandb
+import argparse
 
 import torch
 import torch.nn as nn
@@ -16,12 +19,79 @@ from PIL import Image
 class VOCSegDataset(VOCSegmentation):
     def __getitem__(self, idx):
         image, label = super().__getitem__(idx)
-        label[label > 20] = 0  # 클래스 인덱스 20 이상을 0으로 변경
+        label[label > 20] = 0
         return image, label
 
 
-if __name__ == '__main__':
+def train(model, criterion, optimizer, num_epochs, lr):
+    start_time = time.time()
+    best_loss = 100
 
+    for epoch in range(10):  # 예시로 10 에폭으로 설정
+        running_loss = 0.0
+        model.train()
+
+        for i, (images, labels) in enumerate(train_loader):
+            images = images.to(device)
+            labels = labels.to(device)
+
+            optimizer.zero_grad()
+            outputs = fcn_model(images)['out']
+            labels = labels.squeeze(1).long()
+
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item()
+
+        print(f'[{epoch + 1}, {i + 1:5d}] loss: {running_loss/len(train_loader):.3f}')
+
+        avg_test_loss = 0.0
+        with torch.no_grad():
+            for images, labels in val_loader:
+                images = images.to(device)
+                labels = labels.to(device)
+
+                outputs = fcn_model(images)['out']
+                labels = labels.squeeze(1).long()
+
+                loss = criterion(outputs, labels)
+                avg_test_loss += loss.item()
+
+        if best_loss > (avg_test_loss / len(val_loader)):
+            best_loss = (avg_test_loss / len(val_loader))
+
+        print(f'Average Loss: {avg_test_loss / len(val_loader):.3f}')
+        wandb.log({'Epoch': epoch, 'loss': avg_test_loss / len(val_loader)})
+
+    total_time = time.time() - start_time
+    print('Finish Training')
+    print('Training complete in {:.0f}m {:.0f}s'.format(total_time // 60, total_time % 60))
+    print('Best val loss: {:4f}'.format(best_loss))
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('--num_epoch', type=int, default=100)
+    parser.add_argument('--batch_size', type=int, default=2)
+    parser.add_argument('--num_workers', type=int, default=2)
+    parser.add_argument('--lr', type=int, default=0.01)
+    parser.add_argument('--ptmodel', type=str, default='basic')
+    parser.add_argument('--path', type=str, default='./fcn-s.pth.tar')
+
+    config = parser.parse_args()
+
+    # 0. args
+    num_epochs = config.num_epoch
+    batch_size = config.batch_size
+    num_workers = config.num_workers
+    lr = config.lr
+    ptmodel = config.ptmodel
+    path = config.path
+    wandb.init(project='ssl-cam', entity='heystranger')  # wandb
+
+    # 1. data load
     image_transforms = transforms.Compose([
         transforms.Resize((256, 256)),
         transforms.RandomHorizontalFlip(),
@@ -36,44 +106,36 @@ if __name__ == '__main__':
         transforms.ToTensor(),
     ])
 
-    train_ds = VOCSegDataset(
+    train_set = VOCSegDataset(
         root='./data', year='2012', image_set='train', download=True,
         transform=image_transforms, target_transform=target_transforms)
-    val_ds = VOCSegDataset(
+    val_set = VOCSegDataset(
         root='./data', year='2012', image_set='val', download=True,
         transform=image_transforms, target_transform=target_transforms)
 
-    np.random.seed(0)
+    # np.random.seed(0)
+    # COLORS = np.random.randint(0, 2, size=(num_classes + 1, 3), dtype='uint8')
+
+    train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_set, batch_size=batch_size, shuffle=False)
+
     num_classes = 21
-    COLORS = np.random.randint(0, 2, size=(num_classes + 1, 3), dtype='uint8')
-
-    train_loader = DataLoader(train_ds, batch_size=2, shuffle=True)
-
-    fcn_model = fcn_resnet50(pretrained=False, num_classes=num_classes)
-    criterion = nn.CrossEntropyLoss()
-    # criterion = nn.BCEWithLogitsLoss()
-    optimizer = torch.optim.Adam(fcn_model.parameters(), lr=0.001)
-
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    fcn_model.to(device)
 
-    for epoch in range(10):  # 예시로 10 에폭으로 설정
-        for images, labels in train_loader:
-            images = images.to(device)
-            labels = labels.to(device)
-            # images = torch.tensor(labels)
-            # labels = torch.tensor(labels)
+    if ptmodel == 'rotation':
+        print('rotation')
 
-            optimizer.zero_grad()
-            outputs = fcn_model(images)['out']
-            labels = labels.squeeze(1).long()
+    elif ptmodel == 'basic':
+        # 2. model
+        fcn_model = fcn_resnet50(pretrained=False, num_classes=num_classes)
+        fcn_model.to(device)
+        criterion = nn.CrossEntropyLoss()
+        # criterion = nn.BCEWithLogitsLoss()
+        optimizer = optim.Adam(fcn_model.parameters(), lr=lr)
 
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
-
-        print(f'Epoch [{epoch+1}/10], Loss: {loss.item()}')
-        print('finish')
+        # 3. train
+        train(fcn_model, criterion, optimizer, num_epochs, lr)
+        torch.save(fcn_model.state_dict(), path)
 
 
 
