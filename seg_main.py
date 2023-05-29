@@ -6,6 +6,7 @@ import argparse
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torch.nn.functional as F
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 from torchvision.models import resnet50
@@ -27,6 +28,7 @@ class VOCSegDataset(VOCSegmentation):
 def train(model, criterion, optimizer, num_epochs, lr):
     start_time = time.time()
     best_loss = 100
+    best_iou = 0
 
     for epoch in range(num_epochs):  # 예시로 10 에폭으로 설정
         running_loss = 0.0
@@ -37,7 +39,7 @@ def train(model, criterion, optimizer, num_epochs, lr):
             labels = labels.to(device)
 
             optimizer.zero_grad()
-            outputs = fcn_model(images)['out']
+            outputs = model(images)['out']  # fcn_model
             labels = labels.squeeze(1).long()
 
             loss = criterion(outputs, labels)
@@ -47,28 +49,67 @@ def train(model, criterion, optimizer, num_epochs, lr):
 
         print(f'[{epoch + 1}, {i + 1:5d}] loss: {running_loss/len(train_loader):.3f}')
 
+        model.eval()
         avg_test_loss = 0.0
+        iou_list = []
         with torch.no_grad():
             for images, labels in val_loader:
                 images = images.to(device)
                 labels = labels.to(device)
 
-                outputs = fcn_model(images)['out']
+                outputs = model(images)['out']  # fcn_model
                 labels = labels.squeeze(1).long()
 
                 loss = criterion(outputs, labels)
                 avg_test_loss += loss.item()
 
+                iou = calculate_iou(outputs, labels, num_classes)
+                iou_list.append(iou)
+
+
+        miou = np.mean(iou_list)
+
         if best_loss > (avg_test_loss / len(val_loader)):
             best_loss = (avg_test_loss / len(val_loader))
 
+        if best_iou < miou:
+            best_iou = miou
+
         print(f'Average Loss: {avg_test_loss / len(val_loader):.3f}')
-        wandb.log({'Epoch': epoch, 'loss': avg_test_loss / len(val_loader)})
+        print(f'Average iou: {miou:.3f}')
+        wandb.log({'MIoU': miou, 'loss': avg_test_loss / len(val_loader)})
 
     total_time = time.time() - start_time
     print('Finish Training')
     print('Training complete in {:.0f}m {:.0f}s'.format(total_time // 60, total_time % 60))
     print('Best val loss: {:4f}'.format(best_loss))
+    print('Best miou: {:4f}'.format(best_iou))
+
+
+def calculate_iou(outputs, targets, num_classes):
+    pred = outputs.argmax(dim=1)
+    iou_list = []
+    for cls in range(num_classes):
+        pred_cls = pred == cls
+        target_cls = targets == cls
+        intersection = (pred_cls & target_cls).sum().item()
+        union = (pred_cls | target_cls).sum().item()
+        iou = intersection / (union + 1e-10)  # avoid division by zero
+        iou_list.append(iou)
+    mean_iou = np.mean(iou_list)
+    return mean_iou
+
+
+def pixel_accuracy(pred, target):
+    # 모델의 예측 클래스 가져오기
+    _, pred_labels = torch.max(pred, dim=1)
+
+    # 타깃과 예측 결과의 픽셀 단위 정확도 계산
+    correct_pixels = torch.sum(pred_labels == target).item()
+    total_pixels = target.numel()
+    accuracy = correct_pixels / total_pixels
+
+    return accuracy
 
 
 if __name__ == '__main__':
@@ -127,8 +168,10 @@ if __name__ == '__main__':
 
     if ptmodel == 'modified':
         # 2. model
-        resnet_model = resnet50()
+        resnet_model = resnet50(num_classes=10)
         resnet_model.load_state_dict(torch.load(model_path))
+        fc_in_features = resnet_model.fc.in_features
+        resnet_model.fc = nn.Linear(fc_in_features, 1000)
         fcn_model = fcn_resnet50(pretrained=False, num_classes=num_classes)
 
         state_dict = resnet_model.state_dict()
@@ -147,7 +190,7 @@ if __name__ == '__main__':
 
     elif ptmodel == 'basic':
         # 2. model
-        fcn_model = fcn_resnet50(pretrained=True, num_classes=num_classes)
+        fcn_model = fcn_resnet50(pretrained=False, num_classes=num_classes)
         fcn_model.to(device)
         criterion = nn.CrossEntropyLoss()
         # criterion = nn.BCEWithLogitsLoss()
