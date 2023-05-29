@@ -9,7 +9,7 @@ this is about Semantic Segmentation using supervised learning.
   - fine-tuning classification
 - Semantic Segmentation
   - dataset: VOC 2012
-  - model: fine-tuning self-supervised classifier + FCN
+  - model: fine-tuning self-supervised classifier(ResNet-50) + FCN
 
 
 ## abstract
