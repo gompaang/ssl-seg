@@ -125,12 +125,16 @@ if __name__ == '__main__':
     num_classes = 21
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-    if ptmodel == 'rotation':
+    if ptmodel == 'modified':
         # 2. model
         resnet_model = resnet50()
         resnet_model.load_state_dict(torch.load(model_path))
         fcn_model = fcn_resnet50(pretrained=False, num_classes=num_classes)
-        # fcn_model.backbone.load_state_dict(resnet_model.state_dict())
+
+        state_dict = resnet_model.state_dict()
+        del state_dict['fc.weight']
+        del state_dict['fc.bias']
+        fcn_model.backbone.load_state_dict(state_dict)
 
         fcn_model = fcn_model.to(device)
         criterion = nn.CrossEntropyLoss()
