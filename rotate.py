@@ -17,7 +17,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from rotate_data import *
 
 
-def train(model, criterion, optimizer, num_epochs, lr, task):
+def train(model, criterion, optimizer, num_epochs, lr, task, path):
     start_time = time.time()
     best_loss = 100
     avg_accuracy = 0
@@ -66,6 +66,7 @@ def train(model, criterion, optimizer, num_epochs, lr, task):
 
         if best_loss > (avg_test_loss / len(testloader)):
             best_loss = (avg_test_loss / len(testloader))
+            torch.save(model.state_dict(), path)
 
         if avg_accuracy < accuracy:
             avg_accuracy = accuracy
@@ -146,8 +147,8 @@ if __name__ == '__main__':
         optimizer = optim.Adam(model.parameters(), lr)
 
         # 3. train
-        train(model, criterion, optimizer, num_epochs=num_epochs, lr=lr, task=task)
-        torch.save(model.state_dict(), path)
+        train(model, criterion, optimizer, num_epochs=num_epochs, lr=lr, task=task, path=path)
+        # torch.save(model.state_dict(), path)
 
     elif task == 'classification':
         # 2. model
@@ -173,8 +174,8 @@ if __name__ == '__main__':
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.Adam(model.parameters(), lr)
 
-        train(model, criterion, optimizer, num_epochs=num_epochs, lr=lr, task=task)
-        torch.save(model.state_dict(), ft_path)
+        train(model, criterion, optimizer, num_epochs=num_epochs, lr=lr, task=task, path=path)
+        # torch.save(model.state_dict(), ft_path)
 
     elif task == 'supervised':
         # 2. model
@@ -188,5 +189,5 @@ if __name__ == '__main__':
         optimizer = optim.Adam(model.parameters(), lr)
 
         # 3. train
-        train(model, criterion, optimizer, num_epochs=num_epochs, lr=lr, task=task)
-        torch.save(model.state_dict(), path)
+        train(model, criterion, optimizer, num_epochs=num_epochs, lr=lr, task=task, path=path)
+        # torch.save(model.state_dict(), path)
