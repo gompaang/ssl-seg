@@ -79,7 +79,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('--lr', type=int, default=0.01)
     parser.add_argument('--ptmodel', type=str, default='basic')
-    parser.add_argument('--path', type=str, default='./fcn-s.pth.tar')
+    parser.add_argument('--path', type=str, default='./fcn.pth.tar')
     parser.add_argument('--model_path', type=str, default='./r50-rc.pth.tar')
 
     config = parser.parse_args()
@@ -129,18 +129,10 @@ if __name__ == '__main__':
         # 2. model
         resnet_model = resnet50()
         resnet_model.load_state_dict(torch.load(model_path))
-
         fcn_model = fcn_resnet50(pretrained=False, num_classes=num_classes)
-        state_dict_fcn = fcn_model.backbone.state_dict()
-        state_dict_resnet = resnet_model['state_dict']
+        # fcn_model.backbone.load_state_dict(resnet_model.state_dict())
 
-        backbone_state_dict = {
-            k: v for k, v in state_dict_resnet.items() if k in state_dict_fcn
-        }
-        state_dict_fcn.update(backbone_state_dict)
-        fcn_model.backbone.load_state_dict(state_dict_fcn)
-
-        # fcn_model.backbone.load_state_dict(resnet50)
+        fcn_model = fcn_model.to(device)
         criterion = nn.CrossEntropyLoss()
         # criterion = nn.BCEWithLogitsLoss()
         optimizer = optim.Adam(fcn_model.parameters(), lr=lr)
