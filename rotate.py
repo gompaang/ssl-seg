@@ -8,7 +8,10 @@ import torch.optim as optim
 import torchvision.transforms as transforms
 
 from torch.utils.data import DataLoader
+from torchvision.models.segmentation import fcn_resnet50
 from torchvision.models import resnet18
+from torchvision.models import resnet50
+from torchvision.models import vgg16
 
 from rotate_data import *
 
@@ -70,6 +73,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=int, default=0.01)
     parser.add_argument('--task', type=str, default='rotation')
     parser.add_argument('--path', type=str, default='./checkpoint.pth.tar')
+    parser.add_argument('--ft_path', type=str, default='./resnet18-sslft.pth.tar')
 
     config = parser.parse_args()
 
@@ -80,6 +84,7 @@ if __name__ == '__main__':
     lr = config.lr
     task = config.task
     path = config.path
+    ft_path = config.ft_path
     wandb.init(project='ssl-cam', entity='heystranger')  # wandb
 
     # 1. data load
@@ -112,27 +117,33 @@ if __name__ == '__main__':
 
     if task == 'rotation':
         # 2. model
-        model = resnet18(num_classes=4)
+        model = resnet50(num_classes=len(rot_classes))
         model = model.to(device)
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.Adam(model.parameters(), lr)
 
         # 3. train
         train(model, criterion, optimizer, num_epochs=num_epochs, lr=lr, task=task)
-        torch.save(model.state_dict(), './checkpoint.pth.tar')
+        torch.save(model.state_dict(), path)
 
     elif task == 'classification':
-        model = resnet18(num_classes=10)
+        model = resnet18(num_classes=4)
         model.load_state_dict(torch.load(path))
 
         for param in model.parameters():
             param.requires_grad = False
 
         fc_in_features = model.fc.in_features
-        model.fc = nn.Linear(fc_in_features, len(classes))
+        model.fc = nn.Linear(fc_in_features, 10)
+
+        for param in model.layer4.parameters():
+            param.requires_grad = True
+        for param in model.fc.parameters():
+            param.requires_grad = True
 
         model = model.to(device)
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.Adam(model.parameters(), lr)
 
         train(model, criterion, optimizer, num_epochs=num_epochs, lr=lr, task=task)
+        torch.save(model.state_dict(), ft_path)
