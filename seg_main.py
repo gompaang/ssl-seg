@@ -76,19 +76,8 @@ def train(model, criterion, optimizer, num_epochs, lr, path):
                 images = images.to(device)
                 labels = labels.to(device)
 
-                # outputs = model(images)['out']  # fcn_model
-                # predicted_masks = torch.argmax(outputs, dim=1)
-
-                # intersection = torch.logical_and(predicted_masks, labels.squeeze(1))
-                # union = torch.logical_or(predicted_masks, labels.squeeze(1))
-                # iou = torch.sum(intersection.float()) / torch.sum(union.float())
-
-                pred_mask = model(images)['out']
-                pred_mask = torch.argmax(pred_mask, dim=1)
-                pred_mask = pred_mask.detach().cpu().numpy()
-                target_mask = labels.detach().cpu().numpy()
-
-                iou = compute_iou(pred_mask, target_mask)
+                outputs = model(images)['out']  # fcn_model
+                iou = compute_iou(outputs, labels)
                 total_iou += iou
 
         avg_iou = total_iou / len(val_loader)
@@ -101,7 +90,7 @@ def train(model, criterion, optimizer, num_epochs, lr, path):
 
         print(f'avg iou: {iou:.3f}')
         # print(f'avg pixel accuracy: {avg_accuracy:.3f}')
-        wandb.log({'iou': iou, 'loss': avg_loss})
+        wandb.log({'iou': avg_iou, 'loss': avg_loss})
         # wandb.log({'pixel accuracy': avg_accuracy, 'loss': avg_loss})
 
     total_time = time.time() - start_time
@@ -112,22 +101,12 @@ def train(model, criterion, optimizer, num_epochs, lr, path):
     print('Best accuracy: {:4f}'.format(best_accuracy))
 
 
-def compute_iou(pred_mask, target_mask):
-    pred_mask = torch.from_numpy(pred_mask)
-    target_mask = torch.from_numpy(target_mask)
-    intersection = torch.logical_and(pred_mask, target_mask).sum().item()
-    union = torch.logical_or(pred_mask, target_mask).sum().item()
-    iou = intersection / union
-    return iou
-
-
-def compute_iou2(outputs, targets):
-    predicted_masks = torch.argmax(outputs, dim=1)
-    predicted_masks = F.one_hot(predicted_masks, num_classes=21).permute(0, 3, 1, 2).float()
-    intersection = torch.sum(predicted_masks * targets)
-    union = torch.sum(predicted_masks) + torch.sum(targets) - intersection
-    iou = intersection / union
-    return iou
+def compute_iou(outputs, targets):
+    predicted_labels = torch.argmax(outputs, dim=1)
+    intersection = torch.logical_and(predicted_labels, targets).sum(dim=(1, 2))
+    union = torch.logical_or(predicted_labels, targets).sum(dim=(1, 2))
+    iou = (intersection + 1e-6) / (union + 1e-6)
+    return iou.mean()
 
 
 def pixel_accuracy(outputs, targets):
@@ -142,7 +121,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--num_epoch', type=int, default=100)
-    parser.add_argument('--batch_size', type=int, default=2)
+    parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('--lr', type=int, default=0.01)
     parser.add_argument('--ptmodel', type=str, default='basic')
@@ -206,10 +185,7 @@ if __name__ == '__main__':
         fcn_model.backbone.load_state_dict(state_dict)
 
         fcn_model = fcn_model.to(device)
-        # criterion = DiceLoss()
         criterion = nn.CrossEntropyLoss()
-        # criterion = nn.BCEWithLogitsLoss()
-        # optimizer = torch.optim.SGD(fcn_model.parameters(), lr=0.001, momentum=0.9)
         optimizer = optim.Adam(fcn_model.parameters(), lr=lr)
 
         # 3. train
@@ -220,9 +196,8 @@ if __name__ == '__main__':
         # 2. model
         fcn_model = fcn_resnet50(pretrained=True, num_classes=num_classes)
         fcn_model.to(device)
-        # criterion = DiceLoss()
+
         criterion = nn.CrossEntropyLoss()
-        # criterion = nn.BCEWithLogitsLoss()
         optimizer = optim.Adam(fcn_model.parameters(), lr=lr)
 
         # 3. train
