@@ -28,3 +28,4 @@ this is about Semantic Segmentation using supervised learning.
 
 ## More details
 [AJOU SOFTCON 2023-1](https://softcon.ajou.ac.kr/works/works.asp?uid=879) <br/><br/>
+<img width="588" alt="포스터" src="https://github.com/gompaang/ssl-seg/assets/87194339/03dbac16-e358-4ae0-9875-6d0ad23fcacb">
